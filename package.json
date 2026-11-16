@@ -1,0 +1,11 @@
+{
+  "name": "ask-any-llm-extension",
+  "private": true,
+  "scripts": {
+    "test": "node tests/unit.test.js && node tests/background.test.js && node tests/content.test.js && node tests/e2e.test.js",
+    "test:live": "node tests/live.test.js"
+  },
+  "devDependencies": {
+    "jsdom": "^26.1.0"
+  }
+}
