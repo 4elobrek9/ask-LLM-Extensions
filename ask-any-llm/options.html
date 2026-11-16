@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title data-i18n="settings.title">ASK AI by 4elobrek9 — настройки</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>ASK AI <span>by 4elobrek9</span></h1>
+      <p class="sub" data-i18n="settings.subtitle">Короткие ответы на вопросы по открытым страницам и видео.</p>
+    </header>
+
+    <section class="card">
+      <label class="field language-field">
+        <span data-i18n="settings.language">Язык интерфейса</span>
+        <select id="language">
+          <option value="ru" data-i18n="settings.russian">Русский</option>
+          <option value="en" data-i18n="settings.english">English</option>
+        </select>
+      </label>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="settings.provider">Провайдер по умолчанию</h2>
+      <div class="radios">
+        <label class="radio">
+          <input type="radio" name="provider" value="pollinations" id="provider-pollinations">
+          <span><b data-i18n="provider.free">FREE</b><small data-i18n="provider.free.description">Работает без настройки внешнего сервера.</small></span>
+        </label>
+        <label class="radio">
+          <input type="radio" name="provider" value="ollama" id="provider-ollama">
+          <span><b data-i18n="provider.local">LOCAL</b><small data-i18n="provider.local.description">Ответы на вашем компьютере через Ollama.</small></span>
+        </label>
+      </div>
+    </section>
+
+    <section class="card" id="card-pollinations">
+      <h2 data-i18n="settings.pollinations">FREE</h2>
+      <label class="field">
+        <span data-i18n="settings.defaultModel">Модель по умолчанию</span>
+        <select id="pollinations-model"></select>
+      </label>
+      <div class="row">
+        <button class="btn" id="refresh-models" data-i18n="settings.refreshModels">Обновить список моделей</button>
+        <span class="muted" id="models-status" data-i18n="settings.modelsLoading">Список ещё не загружен.</span>
+      </div>
+      <label class="check">
+        <input type="checkbox" id="auto-fallback">
+        <span data-i18n="settings.autoFallback">Если модель недоступна, автоматически выбрать доступную.</span>
+      </label>
+      <p class="hint" data-i18n-html="settings.pollinationsHint">FREE использует доступную бесплатную модель; список зависит от сервиса.</p>
+    </section>
+
+    <section class="card" id="card-ollama">
+      <h2 data-i18n="settings.ollama">LOCAL</h2>
+      <label class="field">
+        <span data-i18n="settings.server">Адрес сервера</span>
+        <input type="text" id="ollama-url" placeholder="http://localhost:11434" spellcheck="false">
+      </label>
+      <label class="field">
+        <span data-i18n="settings.modelName">Имя модели</span>
+        <input type="text" id="ollama-model" placeholder="qwen2.5" list="ollama-models" spellcheck="false">
+        <datalist id="ollama-models"></datalist>
+      </label>
+      <div class="row">
+        <button class="btn" id="check-ollama" data-i18n="settings.checkConnection">Проверить соединение</button>
+        <span class="muted" id="ollama-status" data-i18n="settings.ollamaNotChecked">Не проверялось.</span>
+      </div>
+      <p class="hint" data-i18n-html="settings.ollamaHint">Модель не установлена? Выполните <code>ollama pull qwen2.5</code>. Для другого адреса Chrome запросит доступ.</p>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="settings.responses">Ответы и вопросы</h2>
+      <label class="field">
+        <span data-i18n="settings.suggest">Предлагать вопросы</span>
+        <select id="question-mode">
+          <option value="page" data-i18n="settings.pageQuestions">По странице или видео</option>
+          <option value="answer" data-i18n="settings.answerQuestions">Углубить последний ответ</option>
+        </select>
+      </label>
+      <label class="check">
+        <input type="checkbox" id="web-search">
+        <span data-i18n="settings.webSearch">Искать актуальные сведения в интернете</span>
+      </label>
+      <p class="hint" data-i18n="settings.webSearchHint">Подходящие запросы, в том числе короткие названия товаров из выделения, отправляются в Bing.</p>
+      <details class="advanced-settings">
+        <summary data-i18n="settings.advanced">Дополнительные настройки</summary>
+      <label class="field">
+        <span data-i18n="settings.systemPrompt">Системный промпт</span>
+        <textarea id="system-prompt" rows="3"></textarea>
+      </label>
+      <div class="grid2">
+        <label class="field">
+          <span data-i18n="settings.contextLength">Символов контекста страницы</span>
+          <input type="number" id="max-context" min="1000" max="60000" step="500">
+        </label>
+        <label class="field">
+          <span data-i18n="settings.timeout">Таймаут запроса, секунд</span>
+          <input type="number" id="timeout" min="20" max="600" step="10">
+        </label>
+      </div>
+      <label class="check">
+        <input type="checkbox" id="stream">
+        <span data-i18n="settings.streaming">Показывать ответ по мере генерации.</span>
+      </label>
+      </details>
+    </section>
+
+    <div class="actions">
+      <button class="btn primary" id="save" data-i18n="settings.save" disabled>Сохранить</button>
+      <button class="btn" id="reset" data-i18n="settings.reset">Сбросить к умолчаниям</button>
+      <span id="toast" class="toast"></span>
+    </div>
+
+    <footer>
+      <p class="muted" data-i18n="settings.history">История чатов хранится в вашем браузере.</p>
+    </footer>
+  </div>
+
+  <script src="shared.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>
