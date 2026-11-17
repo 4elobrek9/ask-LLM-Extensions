@@ -29,6 +29,7 @@
     questionMode: "answer", // page | answer
     theme: "light", // light | dark
     language: "ru", // ru | en
+    responseLanguage: "interface", // interface | ru | en
     webSearch: true,
     requestTimeoutSec: 180
   };
@@ -57,7 +58,19 @@
       "copy": "копировать",
       "settings.title": "ASK AI by 4elobrek9 — настройки",
       "settings.subtitle": "Короткие ответы на вопросы по открытым страницам и видео.",
+      "settings.ready": "Всё под контролем",
+      "settings.personalize": "Ваш ритм",
+      "settings.languageHint": "Язык интерфейса и ответов — отдельно.",
+      "settings.providerHint": "Выберите, где будут рождаться ответы.",
+      "settings.recommended": "БЕЗ КЛЮЧА",
+      "settings.private": "НА ВАШЕМ ПК",
+      "settings.freeHint": "Быстрый старт без лишних настроек.",
+      "settings.localHint": "Ваш компьютер. Ваши модели. Ваши правила.",
+      "settings.responsesHint": "Настройте ощущение от каждого диалога.",
       "settings.language": "Язык интерфейса",
+      "settings.responseLanguage": "Язык ответов",
+      "settings.responseLanguageHint": "Вопросы и ответы будут написаны на выбранном языке.",
+      "settings.sameAsInterface": "Как в интерфейсе",
       "settings.russian": "Русский",
       "settings.english": "English",
       "settings.provider": "Провайдер по умолчанию",
@@ -155,7 +168,19 @@
       "copy": "copy",
       "settings.title": "ASK AI by 4elobrek9 — Settings",
       "settings.subtitle": "Quick answers about open pages and videos.",
+      "settings.ready": "All in your hands",
+      "settings.personalize": "Your pace",
+      "settings.languageHint": "Interface and response languages are separate.",
+      "settings.providerHint": "Choose where your answers come from.",
+      "settings.recommended": "NO API KEY",
+      "settings.private": "ON YOUR PC",
+      "settings.freeHint": "A quick start, without the setup.",
+      "settings.localHint": "Your computer. Your models. Your rules.",
+      "settings.responsesHint": "Shape the feel of every conversation.",
       "settings.language": "Interface language",
+      "settings.responseLanguage": "Response language",
+      "settings.responseLanguageHint": "Questions and answers will use the selected language.",
+      "settings.sameAsInterface": "Match interface",
       "settings.russian": "Русский",
       "settings.english": "English",
       "settings.provider": "Default provider",
@@ -271,6 +296,7 @@
     s.questionMode = s.questionMode === "answer" ? "answer" : "page";
     s.theme = s.theme === "dark" ? "dark" : "light";
     s.language = s.language === "en" ? "en" : "ru";
+    s.responseLanguage = ["ru", "en"].includes(s.responseLanguage) ? s.responseLanguage : "interface";
     s.webSearch = s.webSearch !== false;
     s.requestTimeoutSec = clampInt(s.requestTimeoutSec, 20, 600, DEFAULT_SETTINGS.requestTimeoutSec);
     return s;
@@ -279,6 +305,11 @@
   function translate(key, language) {
     const locale = language === "en" ? "en" : "ru";
     return (UI_TEXT[locale] && UI_TEXT[locale][key]) || (UI_TEXT.ru && UI_TEXT.ru[key]) || key;
+  }
+
+  function getResponseLanguage(settings) {
+    const s = mergeSettings(settings);
+    return s.responseLanguage === "interface" ? s.language : s.responseLanguage;
   }
 
   function localizeDocument(doc, language) {
@@ -362,11 +393,15 @@
   // Сборка messages: system (+ контекст страницы) + история + новый вопрос
   function buildMessages(opts) {
     const settings = mergeSettings(opts.settings);
+    const responseLanguage = getResponseLanguage(settings);
+    const languageInstruction = responseLanguage === "en"
+      ? "RESPONSE LANGUAGE: Write every answer in English, regardless of the language used in the question, page, or custom instructions."
+      : "ЯЗЫК ОТВЕТА: Всегда отвечай на русском языке, независимо от языка вопроса, страницы или пользовательских инструкций.";
     const history = (opts.history || []).filter(
       (m) => m && (m.role === "user" || m.role === "assistant") && !m.error && String(m.content || "").trim()
     );
     const tail = history.slice(-settings.historyLimit);
-    const sys = [settings.systemPrompt, pageContextBlock(opts.pageContext, settings.maxContextChars), opts.webContext]
+    const sys = [settings.systemPrompt, languageInstruction, pageContextBlock(opts.pageContext, settings.maxContextChars), opts.webContext]
       .filter(Boolean)
       .join("\n\n");
     const messages = [];
@@ -385,14 +420,20 @@
 
   function buildQuestionsMessages(pageContext, settings) {
     const s = mergeSettings(settings);
+    const language = getResponseLanguage(s);
+    const questionsPrompt = language === "en"
+      ? 'Suggest 3 interesting questions about this article. Reply with only a valid JSON array of three strings in English, without explanations or markdown. Example: ["Question 1?", "Question 2?", "Question 3?"]'
+      : 'Предложи 3 интересных вопроса по этой статье. Ответь строго JSON массивом из трёх строк на русском языке, без пояснений и без markdown. Пример: ["Вопрос 1?", "Вопрос 2?", "Вопрос 3?"]';
     const block = pageContextBlock(pageContext, s.maxContextChars);
     return [
-      { role: "system", content: "Ты помогаешь читателю разобраться в статье. Отвечай только валидным JSON." },
-      { role: "user", content: block + "\n\n" + QUESTIONS_PROMPT }
+      { role: "system", content: language === "en"
+        ? "Help the reader understand the article. Return only valid JSON. Write question strings in English."
+        : "Ты помогаешь читателю разобраться в статье. Отвечай только валидным JSON, вопросы формулируй на русском." },
+      { role: "user", content: block + "\n\n" + questionsPrompt }
     ];
   }
 
-  function generateQuestions(text, title, mode, seed) {
+  function generateQuestions(text, title, mode, seed, language) {
     const source = String(text || "")
       .replace(/\[\d{2}:\d{2}(?::\d{2})?\][ \t]*/g, "")
       .replace(/\r/g, "\n")
@@ -401,7 +442,23 @@
     const sentences = source.split(/(?<=[.!?])\s+|\n+/)
       .map((sentence) => sentence.trim())
       .filter((sentence) => sentence.length >= 24 && sentence.length <= 220 && !/\?$/.test(sentence));
-    const pool = mode === "answer"
+    const pool = language === "en"
+      ? (mode === "answer"
+        ? [
+            "Could you explain this idea more simply and give an example?",
+            "What important caveats or exceptions are there?",
+            "What is this conclusion based on?",
+            "How could this be applied in practice?",
+            "What might someone disagree with here?"
+          ]
+        : [
+            'What is the main idea of "' + heading + '"?',
+            "What causes and effects does the article describe?",
+            "Which fact in the text matters most, and why?",
+            "What solution does the author suggest?",
+            "What conclusions can we draw from this topic?"
+          ])
+      : mode === "answer"
       ? [
           "Можешь объяснить эту мысль проще и привести пример?",
           "Какие есть важные оговорки или исключения?",
@@ -419,7 +476,14 @@
     const facts = sentences.slice(0, 8);
     for (const sentence of facts) {
       const short = sentence.length > 150 ? sentence.slice(0, 147).replace(/\s+\S*$/, "") + "…" : sentence;
-      if (mode === "answer") {
+      if (language === "en") {
+        if (mode === "answer") {
+          pool.push('Could you explain this idea in more detail: "' + short + '"?');
+          pool.push('What example supports this claim: "' + short + '"?');
+        } else {
+          pool.push('How does the article explain this fact: "' + short + '"?');
+        }
+      } else if (mode === "answer") {
         pool.push("Можешь подробнее раскрыть мысль: «" + short + "»?");
         pool.push("Какой пример подтверждает утверждение: «" + short + "»?");
       } else {
@@ -437,11 +501,13 @@
       const j = Math.floor(random() * (i + 1));
       [uniquePool[i], uniquePool[j]] = [uniquePool[j], uniquePool[i]];
     }
-    const specific = uniquePool.filter((question) =>
-      question.startsWith("Как в материале объясняется факт:") ||
-      question.startsWith("Можешь подробнее раскрыть мысль:") ||
-      question.startsWith("Какой пример подтверждает утверждение:")
-    );
+    const specific = uniquePool.filter((question) => language === "en"
+      ? question.startsWith("How does the article explain this fact:") ||
+        question.startsWith("Could you explain this idea in more detail:") ||
+        question.startsWith("What example supports this claim:")
+      : question.startsWith("Как в материале объясняется факт:") ||
+        question.startsWith("Можешь подробнее раскрыть мысль:") ||
+        question.startsWith("Какой пример подтверждает утверждение:"));
     const general = uniquePool.filter((question) => !specific.includes(question));
     const selected = specific.slice(0, Math.min(2, specific.length));
     while (selected.length < 3 && general.length) selected.push(general.shift());
@@ -1144,6 +1210,7 @@
     ApiError,
     mergeSettings,
     translate,
+    getResponseLanguage,
     localizeDocument,
     normalizeOllamaUrl,
     buildPrompt,

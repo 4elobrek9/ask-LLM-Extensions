@@ -10,6 +10,7 @@
 
   const els = {
     language: $("language"),
+    responseLanguage: $("response-language"),
     providerPoll: $("provider-pollinations"),
     providerOllama: $("provider-ollama"),
     pollModel: $("pollinations-model"),
@@ -80,6 +81,7 @@
     els.timeout.value = settings.requestTimeoutSec;
     els.stream.checked = settings.stream;
     els.language.value = settings.language;
+    els.responseLanguage.value = settings.responseLanguage;
     L.localizeDocument(document, settings.language);
     fillModelSelect();
   }
@@ -88,6 +90,7 @@
     return {
       provider: els.providerOllama.checked ? "ollama" : "pollinations",
       language: els.language.value,
+      responseLanguage: els.responseLanguage.value,
       pollinationsModel: els.pollModel.value || "openai-fast",
       ollamaUrl: L.normalizeOllamaUrl(els.ollamaUrl.value),
       ollamaModel: (els.ollamaModel.value || "qwen2.5").trim(),
