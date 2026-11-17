@@ -46,11 +46,11 @@
     bubbleDirty: false
   };
 
-  const FALLBACK_QUESTIONS = [
-    "О чём эта страница? Дай краткую выжимку.",
-    "Какие здесь ключевые факты и цифры?",
-    "Что из этого можно применить на практике?"
-  ];
+  function fallbackQuestions() {
+    return L.getResponseLanguage(state.settings) === "en"
+      ? ["What is this page about? Give me a quick summary.", "What are its key facts and figures?", "What can I apply in practice?"]
+      : ["О чём эта страница? Дай краткую выжимку.", "Какие здесь ключевые факты и цифры?", "Что из этого можно применить на практике?"];
+  }
 
   /* ---------------- Утилиты ---------------- */
 
@@ -560,7 +560,7 @@
 
     if (a.kind === "questions") {
       const parsed = L.parseQuestions(msg.text);
-      chat.questions = parsed.length ? parsed : FALLBACK_QUESTIONS.slice();
+      chat.questions = parsed.length ? parsed : fallbackQuestions();
       chat.messages.push({
         id: uid(), role: "notice", ts: Date.now(),
         content: parsed.length
@@ -581,7 +581,8 @@
           questionSource,
           chat.pageContext && chat.pageContext.title,
           state.settings.questionMode,
-          Date.now() + chat.messages.length
+          Date.now() + chat.messages.length,
+          L.getResponseLanguage(state.settings)
         );
       }
     }
@@ -795,7 +796,7 @@
     }
 
     applyPageSources(chat, sources);
-    chat.questions = L.generateQuestions(chat.pageContext.text, chat.pageContext.title, "page", Date.now());
+    chat.questions = L.generateQuestions(chat.pageContext.text, chat.pageContext.title, "page", Date.now(), L.getResponseLanguage(state.settings));
     chat.messages.push({
       id: uid(), role: "notice", ts: Date.now(),
       content: sources.length === 1
@@ -1006,7 +1007,7 @@
         if (state.chats.get(tabId) !== chat) return;
         if (!res || !res.ok) {
           if (!chat.questions.length) {
-            chat.questions = L.generateQuestions(tab.title || tab.url, tab.title, "page", Date.now());
+            chat.questions = L.generateQuestions(tab.title || tab.url, tab.title, "page", Date.now(), L.getResponseLanguage(state.settings));
           }
           await saveChat(chat);
           if (state.tabId === tabId && state.chat === chat) renderChips();
@@ -1019,11 +1020,11 @@
           method: res.method, sources: [{ tabId: tabId, url: res.url, title: res.title, method: res.method }], ts: Date.now()
         };
         if (!chat.questions.length) {
-          chat.questions = L.generateQuestions(res.text, res.title, "page", Date.now());
+          chat.questions = L.generateQuestions(res.text, res.title, "page", Date.now(), L.getResponseLanguage(state.settings));
         }
         await saveChat(chat);
       } else if (!chat.questions.length) {
-        chat.questions = L.generateQuestions(chat.pageContext.text, chat.pageContext.title, "page", Date.now());
+        chat.questions = L.generateQuestions(chat.pageContext.text, chat.pageContext.title, "page", Date.now(), L.getResponseLanguage(state.settings));
         await saveChat(chat);
       }
       if (state.tabId === tabId && state.chat === chat) {
@@ -1077,7 +1078,10 @@
       els.theme.disabled = false;
     }
   });
-  els.input.addEventListener("input", autoGrow);
+  els.input.addEventListener("input", () => {
+    autoGrow();
+    els.input.closest(".composer").classList.toggle("has-draft", !!els.input.value.trim());
+  });
   els.input.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
@@ -1118,10 +1122,21 @@
   chrome.runtime.onMessage.addListener((msg) => {
     if (!msg) return;
     if (msg.type === "SETTINGS_CHANGED") {
+      const previousResponseLanguage = L.getResponseLanguage(state.settings);
       state.settings = L.mergeSettings(msg.settings);
+      const responseLanguage = L.getResponseLanguage(state.settings);
       const configured = configuredProvider();
       for (const chat of state.chats.values()) {
         Object.assign(chat, configured);
+        if (previousResponseLanguage !== responseLanguage && chat.questions.length) {
+          const lastAnswer = chat.messages.slice().reverse().find((message) => message.role === "assistant" && message.content);
+          const source = state.settings.questionMode === "answer" && lastAnswer
+            ? lastAnswer.content
+            : chat.pageContext && chat.pageContext.text;
+          chat.questions = source
+            ? L.generateQuestions(source, chat.pageContext && chat.pageContext.title, state.settings.questionMode, Date.now(), responseLanguage)
+            : fallbackQuestions();
+        }
         saveChat(chat);
       }
       renderAll();

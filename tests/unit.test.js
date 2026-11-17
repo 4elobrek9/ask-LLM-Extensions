@@ -149,6 +149,9 @@ function streamResponse(chunks, headers) {
     assert.strictEqual(L.mergeSettings({}).language, "ru");
     assert.strictEqual(L.mergeSettings({ language: "en" }).language, "en");
     assert.strictEqual(L.mergeSettings({ language: "fr" }).language, "ru");
+    assert.strictEqual(L.getResponseLanguage({ language: "en" }), "en");
+    assert.strictEqual(L.getResponseLanguage({ language: "en", responseLanguage: "ru" }), "ru");
+    assert.strictEqual(L.getResponseLanguage({ language: "ru", responseLanguage: "en" }), "en");
     assert.strictEqual(L.translate("input.placeholder", "en"), "Ask something...");
     assert.strictEqual(L.translate("provider.local", "ru"), "LOCAL");
   });
@@ -200,6 +203,20 @@ function streamResponse(chunks, headers) {
     assert.ok(msgs[0].content.includes("Байкал"));
     assert.strictEqual(msgs.length, 4); // system + 2 истории + новый вопрос
     assert.strictEqual(msgs[msgs.length - 1].content, "о чём статья?");
+  });
+
+  test("response language controls answer instructions and suggested questions", () => {
+    const englishMessages = L.buildMessages({
+      settings: { language: "ru", responseLanguage: "en", systemPrompt: "Keep it brief." },
+      userText: "Объясни это"
+    });
+    assert.ok(englishMessages[0].content.includes("Write every answer in English"));
+    const englishQuestions = L.buildQuestionsMessages(null, { language: "ru", responseLanguage: "en" });
+    assert.ok(englishQuestions[0].content.includes("in English"));
+    assert.ok(englishQuestions[1].content.includes("valid JSON array"));
+    const localQuestions = L.generateQuestions("This article explains how a small change can improve the system. The results are visible in practice.", "A useful change", "page", 4, "en");
+    assert.ok(localQuestions.every((question) => /^[A-Z]/.test(question)));
+    assert.ok(localQuestions.some((question) => question.includes("article")));
   });
 
   test("buildMessages adds web results to hidden system context, not the visible user text", () => {

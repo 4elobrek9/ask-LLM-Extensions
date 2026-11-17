@@ -253,15 +253,17 @@ async function test(name, fn) {
     assert.ok(await until(() => options$("save") && !options$("save").disabled));
     options$("language").value = "en";
     options$("language").dispatchEvent(new optionsWin.Event("change"));
+    options$("response-language").value = "en";
     assert.strictEqual(optionsWin.document.documentElement.lang, "en");
     assert.strictEqual(options$("save").textContent, "Save");
     options$("save").click();
     assert.ok(await until(async () => {
       const current = await bgChrome.storage.sync.get("settings");
-      return current.settings.language === "en";
+      return current.settings.language === "en" && current.settings.responseLanguage === "en";
     }));
     options$("language").value = "ru";
     options$("language").dispatchEvent(new optionsWin.Event("change"));
+    options$("response-language").value = "interface";
     options$("save").click();
     assert.ok(await until(async () => {
       const current = await bgChrome.storage.sync.get("settings");
