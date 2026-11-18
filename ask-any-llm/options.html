@@ -24,7 +24,7 @@
     </header>
 
     <main>
-      <section class="card language-card">
+      <section class="card language-card liquid-glass">
         <div class="section-heading">
           <span class="section-index">01</span>
           <div><h2 data-i18n="settings.personalize">Ваш ритм</h2><p data-i18n="settings.languageHint">Язык интерфейса и ответов — отдельно.</p></div>
@@ -41,7 +41,7 @@
           <label class="field">
             <span data-i18n="settings.responseLanguage">Язык ответов</span>
             <select id="response-language">
-              <option value="interface" data-i18n="settings.sameAsInterface">Как в интерфейсе</option>
+              <option value="auto" data-i18n="settings.auto">Автоматически</option>
               <option value="ru" data-i18n="settings.russian">Русский</option>
               <option value="en" data-i18n="settings.english">English</option>
             </select>
@@ -50,7 +50,7 @@
         <p class="hint" data-i18n="settings.responseLanguageHint">Вопросы и ответы будут написаны на выбранном языке.</p>
       </section>
 
-    <section class="card">
+    <section class="card liquid-glass">
       <div class="section-heading">
         <span class="section-index">02</span>
         <div><h2 data-i18n="settings.provider">Провайдер по умолчанию</h2><p data-i18n="settings.providerHint">Выберите, где будут рождаться ответы.</p></div>
@@ -69,7 +69,7 @@
       </div>
     </section>
 
-    <section class="card" id="card-pollinations">
+    <section class="card liquid-glass" id="card-pollinations">
       <div class="section-heading"><span class="section-index">03</span><div><h2 data-i18n="settings.pollinations">FREE</h2><p data-i18n="settings.freeHint">Быстрый старт без лишних настроек.</p></div></div>
       <label class="field">
         <span data-i18n="settings.defaultModel">Модель по умолчанию</span>
@@ -86,7 +86,7 @@
       <p class="hint" data-i18n-html="settings.pollinationsHint">FREE использует доступную бесплатную модель; список зависит от сервиса.</p>
     </section>
 
-    <section class="card" id="card-ollama">
+    <section class="card liquid-glass" id="card-ollama">
       <div class="section-heading"><span class="section-index">04</span><div><h2 data-i18n="settings.ollama">LOCAL</h2><p data-i18n="settings.localHint">Ваш компьютер. Ваши модели. Ваши правила.</p></div></div>
       <label class="field">
         <span data-i18n="settings.server">Адрес сервера</span>
@@ -104,7 +104,7 @@
       <p class="hint" data-i18n-html="settings.ollamaHint">Модель не установлена? Выполните <code>ollama pull qwen2.5</code>. Для другого адреса Chrome запросит доступ.</p>
     </section>
 
-    <section class="card">
+    <section class="card liquid-glass">
       <div class="section-heading"><span class="section-index">05</span><div><h2 data-i18n="settings.responses">Ответы и вопросы</h2><p data-i18n="settings.responsesHint">Настройте ощущение от каждого диалога.</p></div></div>
       <label class="field">
         <span data-i18n="settings.suggest">Предлагать вопросы</span>

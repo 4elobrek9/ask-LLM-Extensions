@@ -20,6 +20,8 @@
     sourceSummary: $("source-summary"),
     messages: $("messages"),
     chips: $("chips"),
+    questionItems: $("question-items"),
+    closeQuestions: $("close-questions"),
     status: $("status"),
     statusText: $("status-text"),
     input: $("input"),
@@ -40,6 +42,8 @@
     active: null,
     port: null,
     pendingQueue: [],
+    pendingQuestionChat: null,
+    questionRequests: new Map(),
     consuming: false,
     pendingCheck: false,
     bubbleTimer: null,
@@ -50,6 +54,17 @@
     return L.getResponseLanguage(state.settings) === "en"
       ? ["What is this page about? Give me a quick summary.", "What are its key facts and figures?", "What can I apply in practice?"]
       : ["О чём эта страница? Дай краткую выжимку.", "Какие здесь ключевые факты и цифры?", "Что из этого можно применить на практике?"];
+  }
+
+  function localQuestionsFor(chat) {
+    const lastAnswer = chat.messages.slice().reverse().find((message) => message.role === "assistant" && message.content);
+    const mode = state.settings.questionMode;
+    const source = mode === "answer" && lastAnswer
+      ? lastAnswer.content
+      : chat.pageContext && chat.pageContext.text;
+    return source
+      ? L.generateQuestions(source, chat.pageContext && chat.pageContext.title, mode, Date.now(), L.getResponseLanguage(state.settings))
+      : fallbackQuestions();
   }
 
   /* ---------------- Утилиты ---------------- */
@@ -82,6 +97,7 @@
       messages: [],
       pageContext: null,
       questions: [],
+      questionsGeneratedByAI: false,
       provider: state.settings.provider,
       model: state.settings.provider === "ollama" ? state.settings.ollamaModel : state.settings.pollinationsModel,
       updatedAt: Date.now()
@@ -111,6 +127,7 @@
     chat.chatId = chat.chatId || uid();
     chat.messages = chat.messages || [];
     chat.questions = chat.questions || [];
+    chat.questionsGeneratedByAI = chat.questionsGeneratedByAI === true;
     chat.pageContext = chat.pageContext || null;
     Object.assign(chat, configuredProvider());
     if (url) chat.url = url;
@@ -394,12 +411,35 @@
 
   function renderChips() {
     const questions = (state.chat && state.chat.questions) || [];
-    els.chips.textContent = "";
-    if (!questions.length) { els.chips.classList.add("hidden"); return; }
-    els.chips.classList.remove("hidden");
+    const loading = state.chat && Array.from(state.questionRequests.values()).some((request) =>
+      request.chat === state.chat && request.pageContext === state.chat.pageContext
+    );
+    const closeLabel = L.translate("questions.closeAll", state.settings.language);
+    els.closeQuestions.title = closeLabel;
+    els.closeQuestions.setAttribute("aria-label", closeLabel);
+    els.questionItems.textContent = "";
+    if (!questions.length && loading) {
+      els.chips.classList.remove("is-collapsed");
+      els.chips.setAttribute("aria-hidden", "false");
+      els.chips.inert = false;
+      const placeholder = document.createElement("span");
+      placeholder.className = "question-loading";
+      placeholder.textContent = tr("status.questionsLoading");
+      els.questionItems.appendChild(placeholder);
+      return;
+    }
+    if (!questions.length) {
+      els.chips.classList.add("is-collapsed");
+      els.chips.setAttribute("aria-hidden", "true");
+      els.chips.inert = true;
+      return;
+    }
+    els.chips.classList.remove("is-collapsed");
+    els.chips.setAttribute("aria-hidden", "false");
+    els.chips.inert = false;
     for (const q of questions) {
       const chip = document.createElement("button");
-      chip.className = "chip";
+      chip.className = "chip liquid-glass";
       chip.type = "button";
       chip.textContent = q;
       chip.title = (state.settings.language === "en" ? "Ask: " : "Спросить: ") + q;
@@ -409,8 +449,28 @@
         autoGrow();
         send(q);
       });
-      els.chips.appendChild(chip);
+      els.questionItems.appendChild(chip);
     }
+  }
+
+  function closeSuggestedQuestions() {
+    const chat = state.chat;
+    if (!chat) return;
+    const pending = Array.from(state.questionRequests.values()).filter((request) => request.chat === chat);
+    if ((!chat.questions || !chat.questions.length) && !pending.length) return;
+    for (const request of pending) {
+      state.questionRequests.delete(request.requestId);
+      if (state.port) state.port.postMessage({ type: "ABORT", requestId: request.requestId });
+    }
+    els.chips.classList.add("is-collapsed");
+    els.chips.setAttribute("aria-hidden", "true");
+    els.chips.inert = true;
+    chat.questions = [];
+    chat.questionsGeneratedByAI = false;
+    saveChat(chat);
+    setTimeout(() => {
+      if (state.chat === chat && !chat.questions.length) els.questionItems.textContent = "";
+    }, 320);
   }
 
   function renderHint() {
@@ -467,6 +527,9 @@
           hint: "Это бывает после простоя. Просто повторите запрос."
         });
       }
+      for (const request of Array.from(state.questionRequests.values())) {
+        finishQuestionRequest(request, null);
+      }
     });
     state.port = port;
     return port;
@@ -486,6 +549,7 @@
       kind: req.kind,
       tabId: req.tabId,
       assistantMsg: req.assistantMsg || null,
+      pageContext: req.pageContext || null,
       model: req.model,
       provider: req.provider,
       text: "",
@@ -505,6 +569,13 @@
   }
 
   function onPortMessage(msg) {
+    const questionRequest = msg && state.questionRequests.get(msg.requestId);
+    if (questionRequest) {
+      if (msg.type === "delta") questionRequest.text += msg.text || "";
+      else if (msg.type === "DONE") finishQuestionRequest(questionRequest, msg.text);
+      else if (msg.type === "ERROR") finishQuestionRequest(questionRequest, null);
+      return;
+    }
     const a = state.active;
     if (!msg || !a || msg.requestId !== a.requestId) return;
 
@@ -558,16 +629,7 @@
     const chat = state.chats.get(a.tabId) || state.chat;
     const elapsed = msg.ms || Date.now() - a.startedAt;
 
-    if (a.kind === "questions") {
-      const parsed = L.parseQuestions(msg.text);
-      chat.questions = parsed.length ? parsed : fallbackQuestions();
-      chat.messages.push({
-        id: uid(), role: "notice", ts: Date.now(),
-        content: parsed.length
-          ? tr("status.questionsReady") + chat.questions.length + tr("status.questionsReadyTail")
-          : tr("status.questionFallback")
-      });
-    } else if (a.assistantMsg) {
+    if (a.assistantMsg) {
       a.assistantMsg.content = (msg.text || a.text || "").trim() || "_(модель вернула пустой ответ)_";
       a.assistantMsg.model = msg.model || a.model;
       a.assistantMsg.provider = msg.provider || a.provider;
@@ -584,6 +646,7 @@
           Date.now() + chat.messages.length,
           L.getResponseLanguage(state.settings)
         );
+        chat.questionsGeneratedByAI = false;
       }
     }
 
@@ -796,7 +859,8 @@
     }
 
     applyPageSources(chat, sources);
-    chat.questions = L.generateQuestions(chat.pageContext.text, chat.pageContext.title, "page", Date.now(), L.getResponseLanguage(state.settings));
+    chat.questions = [];
+    chat.questionsGeneratedByAI = false;
     chat.messages.push({
       id: uid(), role: "notice", ts: Date.now(),
       content: sources.length === 1
@@ -810,6 +874,7 @@
     scrollBottom(true);
     setBusy(false);
     setStatus("", false);
+    requestSuggestedQuestions(chat);
   }
 
   async function extractTabSources(tabIds) {
@@ -974,9 +1039,64 @@
   }
 
   function drainPending() {
-    if (state.busy || !state.pendingQueue.length) return;
+    if (state.busy) return;
+    if (!state.pendingQueue.length) {
+      const chat = state.pendingQuestionChat;
+      state.pendingQuestionChat = null;
+      if (chat && chat.pageContext && (!chat.questions.length || !chat.questionsGeneratedByAI)) requestSuggestedQuestions(chat);
+      return;
+    }
     const task = state.pendingQueue.shift();
     setTimeout(() => runTask(task), 50);
+  }
+
+  function requestSuggestedQuestions(chat) {
+    if (!chat || !chat.pageContext || !chat.pageContext.text) return false;
+    if (Array.from(state.questionRequests.values()).some((request) =>
+      request.chat === chat && request.pageContext === chat.pageContext
+    )) return true;
+    if (state.busy) {
+      state.pendingQuestionChat = chat;
+      return false;
+    }
+    chat.questions = [];
+    chat.questionsGeneratedByAI = false;
+    Object.assign(chat, configuredProvider());
+    const request = {
+      requestId: uid(),
+      chat: chat,
+      pageContext: chat.pageContext,
+      text: ""
+    };
+    state.questionRequests.set(request.requestId, request);
+    if (state.chat === chat) renderChips();
+    try {
+      connectPort().postMessage({
+        type: "START",
+        requestId: request.requestId,
+        provider: chat.provider,
+        model: chat.model,
+        messages: L.buildQuestionsMessages(chat.pageContext, state.settings)
+      });
+    } catch (e) {
+      finishQuestionRequest(request, null);
+    }
+    return true;
+  }
+
+  function finishQuestionRequest(request, responseText) {
+    if (!state.questionRequests.has(request.requestId)) return;
+    state.questionRequests.delete(request.requestId);
+    if (request.chat.pageContext === request.pageContext) {
+      const parsed = typeof responseText === "string" ? L.parseQuestions(responseText) : [];
+      request.chat.questions = parsed.length ? parsed : localQuestionsFor(request.chat);
+      request.chat.questionsGeneratedByAI = parsed.length > 0;
+      if (!parsed.length) {
+        request.chat.messages.push({ id: uid(), role: "notice", ts: Date.now(), content: tr("status.questionFallback") });
+      }
+      saveChat(request.chat);
+    }
+    if (state.chat === request.chat) renderChips();
   }
 
   /* ---------------- Вкладки ---------------- */
@@ -1007,7 +1127,8 @@
         if (state.chats.get(tabId) !== chat) return;
         if (!res || !res.ok) {
           if (!chat.questions.length) {
-            chat.questions = L.generateQuestions(tab.title || tab.url, tab.title, "page", Date.now(), L.getResponseLanguage(state.settings));
+            chat.questions = localQuestionsFor(chat);
+            chat.questionsGeneratedByAI = false;
           }
           await saveChat(chat);
           if (state.tabId === tabId && state.chat === chat) renderChips();
@@ -1019,13 +1140,10 @@
           url: res.url, title: res.title, text: res.text, length: res.length,
           method: res.method, sources: [{ tabId: tabId, url: res.url, title: res.title, method: res.method }], ts: Date.now()
         };
-        if (!chat.questions.length) {
-          chat.questions = L.generateQuestions(res.text, res.title, "page", Date.now(), L.getResponseLanguage(state.settings));
-        }
+        if (!chat.questions.length || !chat.questionsGeneratedByAI) requestSuggestedQuestions(chat);
         await saveChat(chat);
-      } else if (!chat.questions.length) {
-        chat.questions = L.generateQuestions(chat.pageContext.text, chat.pageContext.title, "page", Date.now(), L.getResponseLanguage(state.settings));
-        await saveChat(chat);
+      } else if (!chat.questions.length || !chat.questionsGeneratedByAI) {
+        requestSuggestedQuestions(chat);
       }
       if (state.tabId === tabId && state.chat === chat) {
         renderChips();
@@ -1060,6 +1178,7 @@
   els.analyze.addEventListener("click", analyzePage);
   els.newChat.addEventListener("click", startNewChat);
   els.options.addEventListener("click", () => chrome.runtime.sendMessage({ type: "OPEN_OPTIONS" }));
+  els.closeQuestions.addEventListener("click", closeSuggestedQuestions);
   els.theme.addEventListener("click", async () => {
     const previous = state.settings.theme;
     const theme = previous === "dark" ? "light" : "dark";
@@ -1080,7 +1199,9 @@
   });
   els.input.addEventListener("input", () => {
     autoGrow();
-    els.input.closest(".composer").classList.toggle("has-draft", !!els.input.value.trim());
+    const hasDraft = !!els.input.value.trim();
+    els.input.closest(".composer").classList.toggle("has-draft", hasDraft);
+    els.input.classList.toggle("is-typing", hasDraft);
   });
   els.input.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
@@ -1113,6 +1234,7 @@
       // Другая страница — старый контекст и вопросы больше не актуальны
       state.chat.pageContext = null;
       state.chat.questions = [];
+      state.chat.questionsGeneratedByAI = false;
       renderChips();
       saveChat(state.chat);
     }
@@ -1136,6 +1258,7 @@
           chat.questions = source
             ? L.generateQuestions(source, chat.pageContext && chat.pageContext.title, state.settings.questionMode, Date.now(), responseLanguage)
             : fallbackQuestions();
+          chat.questionsGeneratedByAI = false;
         }
         saveChat(chat);
       }
