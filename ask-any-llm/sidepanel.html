@@ -39,7 +39,15 @@
 
   <main id="messages" class="messages" aria-live="polite"></main>
 
-  <div id="chips" class="chips hidden"></div>
+  <section id="chips" class="chips liquid-glass is-collapsed" aria-label="Предложенные вопросы" data-i18n-aria-label="questions.title" aria-hidden="true" inert>
+    <div class="chips-heading">
+      <span data-i18n="questions.title">Вопросы по теме</span>
+      <button id="close-questions" class="icon-btn tiny close-questions" type="button" aria-label="Закрыть все вопросы" title="Закрыть все вопросы">
+        <span aria-hidden="true">✕</span>
+      </button>
+    </div>
+    <div id="question-items" class="question-items"></div>
+  </section>
 
   <div id="status" class="status hidden">
     <span class="spinner" aria-hidden="true"></span>

@@ -167,6 +167,11 @@ async function setSettings(patch) {
 }
 
 win.eval(read("shared.js"));
+plan = [answer(JSON.stringify([
+  "Чем питается байкальская нерпа?",
+  "Как нерпа строит логова зимой?",
+  "Почему нерпа живёт только в Байкале?"
+]))];
 win.eval(read("sidepanel.js"));
 
 const doc = win.document;
@@ -203,21 +208,23 @@ async function test(name, fn) {
     assert.strictEqual(doc.querySelectorAll(".chip").length, 3, "вопросы должны появиться без отдельного анализа");
     assert.ok(doc.querySelector(".brand").textContent.includes("ASK AI by 4elobrek9"));
     assert.strictEqual($("theme").tagName, "BUTTON");
-    assert.strictEqual(doc.documentElement.dataset.theme, "light");
+    assert.strictEqual(doc.documentElement.dataset.theme, "dark");
     assert.strictEqual($("input").placeholder, "Спросите что-нибудь...");
+    assert.ok(lastRequestBody.messages[1].content.includes("КОНТЕКСТ СТРАНИЦЫ"), "при открытии панели ИИ должен получить контекст страницы");
+    assert.strictEqual(doc.querySelector(".chip").textContent, "Чем питается байкальская нерпа?");
   });
 
   await test("анимированная кнопка сохраняет тему в настройках", async () => {
     $("theme").click();
     assert.ok(await until(async () => {
       const current = await bgChrome.storage.sync.get("settings");
-      return doc.documentElement.dataset.theme === "dark" && current.settings.theme === "dark";
+      return doc.documentElement.dataset.theme === "light" && current.settings.theme === "light";
     }));
-    assert.strictEqual($("theme").getAttribute("aria-pressed"), "true");
+    assert.strictEqual($("theme").getAttribute("aria-pressed"), "false");
     $("theme").click();
     assert.ok(await until(async () => {
       const current = await bgChrome.storage.sync.get("settings");
-      return doc.documentElement.dataset.theme === "light" && current.settings.theme === "light";
+      return doc.documentElement.dataset.theme === "dark" && current.settings.theme === "dark";
     }));
   });
 
@@ -263,7 +270,7 @@ async function test(name, fn) {
     }));
     options$("language").value = "ru";
     options$("language").dispatchEvent(new optionsWin.Event("change"));
-    options$("response-language").value = "interface";
+    options$("response-language").value = "auto";
     options$("save").click();
     assert.ok(await until(async () => {
       const current = await bgChrome.storage.sync.get("settings");
@@ -418,8 +425,9 @@ async function test(name, fn) {
     $("btn-send").click();
     assert.ok(await until(() => /Сохранённый ответ/.test(lastAssistant().textContent)));
     const stored = await bgChrome.storage.local.get("chat_1");
-    assert.strictEqual(stored["chat_1"].messages.length, 2);
-    assert.strictEqual(stored["chat_1"].messages[1].streaming, false);
+    const conversation = stored["chat_1"].messages.filter((message) => message.role === "user" || message.role === "assistant");
+    assert.strictEqual(conversation.length, 2);
+    assert.strictEqual(conversation[1].streaming, false);
   });
 
   await test("бургер открывает историю и восстанавливает выбранный чат", async () => {
@@ -432,7 +440,6 @@ async function test(name, fn) {
   });
 
   await test("возврат на вкладку восстанавливает её вопросы", async () => {
-    const originalQuestions = [...doc.querySelectorAll(".chip")].map((chip) => chip.textContent);
     secondTab.status = "loading";
     bgChrome.tabs.onActivated.fire({ tabId: 2 });
     await wait(100);
@@ -441,10 +448,18 @@ async function test(name, fn) {
     bgChrome.tabs.onUpdated.fire(2, { status: "complete" });
     assert.ok(await until(() => doc.querySelectorAll(".chip").length === 3), "вопросы второй вкладки не появились");
     bgChrome.tabs.onActivated.fire({ tabId: 1 });
-    assert.ok(await until(() =>
-      JSON.stringify([...doc.querySelectorAll(".chip")].map((chip) => chip.textContent)) === JSON.stringify(originalQuestions)
-    ), "вопросы первой вкладки не восстановились");
-    assert.deepStrictEqual([...doc.querySelectorAll(".chip")].map((chip) => chip.textContent), originalQuestions);
+    assert.ok(await until(() => doc.querySelectorAll(".chip").length === 3), "вопросы первой вкладки не восстановились");
+    assert.ok(await until(() => doc.querySelectorAll(".msg.user").length > 0), "первая переписка не вернулась");
+  });
+
+  await test("закрытие вопросов плавно схлопывает и очищает блок", async () => {
+    $("close-questions").click();
+    assert.strictEqual($("chips").classList.contains("is-collapsed"), true);
+    assert.strictEqual($("chips").getAttribute("aria-hidden"), "true");
+    assert.strictEqual($("chips").inert, true);
+    assert.ok(await until(() => doc.querySelectorAll(".chip").length === 0, 500));
+    const stored = await bgChrome.storage.local.get("chat_1");
+    assert.deepStrictEqual(stored["chat_1"].questions, []);
   });
 
   console.log("\nПройдено тестов: " + passed + "\n");

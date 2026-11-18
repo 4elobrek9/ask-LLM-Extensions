@@ -19,7 +19,7 @@
     autoFallback: true, // менять недоступную модель на доступную
     promptTemplate: "Ответь кратко и по-русски: {text}",
     systemPrompt:
-      "Ты — помощник в браузере. Отвечай по-русски кратко и естественно, обычно в 2–5 предложениях. " +
+      "Ты — помощник в браузере. Отвечай кратко и естественно, обычно в 2–5 предложениях. " +
       "Не используй таблицы и длинные списки, если об этом не попросили. Не выдумывай факты; " +
       "если вопрос относится к открытой странице или видео — используй их текст. " +
       "Если информации там нет или вопрос не связан со страницей, отвечай из общих знаний; " +
@@ -27,9 +27,9 @@
     maxContextChars: 10000, // оставляем запрос быстрым и помещающимся в контекст модели
     historyLimit: 12, // короткая история ускоряет последующие ответы
     questionMode: "answer", // page | answer
-    theme: "light", // light | dark
+    theme: "dark", // light | dark
     language: "ru", // ru | en
-    responseLanguage: "interface", // interface | ru | en
+    responseLanguage: "auto", // auto | ru | en
     webSearch: true,
     requestTimeoutSec: 180
   };
@@ -70,7 +70,9 @@
       "settings.language": "Язык интерфейса",
       "settings.responseLanguage": "Язык ответов",
       "settings.responseLanguageHint": "Вопросы и ответы будут написаны на выбранном языке.",
-      "settings.sameAsInterface": "Как в интерфейсе",
+      "settings.auto": "Автоматически",
+      "questions.closeAll": "Закрыть все вопросы",
+      "questions.title": "Вопросы по теме",
       "settings.russian": "Русский",
       "settings.english": "English",
       "settings.provider": "Провайдер по умолчанию",
@@ -130,7 +132,7 @@
       "status.webSearch": "Ищу актуальные сведения…",
       "status.questionsReady": "Готово: ",
       "status.questionsReadyTail": " вопроса по странице. Нажмите на вопрос.",
-      "status.questionFallback": "Модель не предложила вопросы — показаны базовые.",
+      "status.questionFallback": "Не удалось получить вопросы от ИИ — показаны общие вопросы.",
       "notice.stopped": "Запрос остановлен.",
       "notice.accessGranted": "Доступ к сайтам выдан.",
       "notice.accessDenied": "Доступ не выдан. Обновите вкладку и попробуйте снова.",
@@ -180,7 +182,9 @@
       "settings.language": "Interface language",
       "settings.responseLanguage": "Response language",
       "settings.responseLanguageHint": "Questions and answers will use the selected language.",
-      "settings.sameAsInterface": "Match interface",
+      "settings.auto": "Auto",
+      "questions.closeAll": "Close all questions",
+      "questions.title": "Suggested questions",
       "settings.russian": "Русский",
       "settings.english": "English",
       "settings.provider": "Default provider",
@@ -240,7 +244,7 @@
       "status.webSearch": "Searching for current information…",
       "status.questionsReady": "Ready: ",
       "status.questionsReadyTail": " page questions. Select one to ask.",
-      "status.questionFallback": "No questions returned; showing general suggestions.",
+      "status.questionFallback": "Could not get AI suggestions; showing general questions.",
       "notice.stopped": "Request stopped.",
       "notice.accessGranted": "Website access granted.",
       "notice.accessDenied": "Access was not granted. Refresh the tab and try again.",
@@ -275,6 +279,14 @@
     if (s.systemPrompt ===
       "Ты — помощник в браузере. Отвечай по-русски кратко и естественно, обычно в 2–5 предложениях. " +
       "Не используй таблицы и длинные списки, если об этом не попросили. Не выдумывай факты; " +
+      "если вопрос относится к открытой странице или видео — используй их текст. " +
+      "Если информации там нет или вопрос не связан со страницей, отвечай из общих знаний; " +
+      "при сомнении обозначай неопределённость, а не отказывайся только из-за отсутствия контекста.") {
+      s.systemPrompt = DEFAULT_SETTINGS.systemPrompt;
+    }
+    if (s.systemPrompt ===
+      "Ты — помощник в браузере. Отвечай по-русски кратко и естественно, обычно в 2–5 предложениях. " +
+      "Не используй таблицы и длинные списки, если об этом не попросили. Не выдумывай факты; " +
       "если ответа нет в тексте страницы или субтитрах — честно скажи об этом.") {
       s.systemPrompt = DEFAULT_SETTINGS.systemPrompt;
     }
@@ -294,9 +306,9 @@
     s.maxContextChars = clampInt(s.maxContextChars, 1000, 60000, DEFAULT_SETTINGS.maxContextChars);
     s.historyLimit = clampInt(s.historyLimit, 2, 100, DEFAULT_SETTINGS.historyLimit);
     s.questionMode = s.questionMode === "answer" ? "answer" : "page";
-    s.theme = s.theme === "dark" ? "dark" : "light";
+    s.theme = s.theme === "light" ? "light" : "dark";
     s.language = s.language === "en" ? "en" : "ru";
-    s.responseLanguage = ["ru", "en"].includes(s.responseLanguage) ? s.responseLanguage : "interface";
+    s.responseLanguage = ["ru", "en"].includes(s.responseLanguage) ? s.responseLanguage : "auto";
     s.webSearch = s.webSearch !== false;
     s.requestTimeoutSec = clampInt(s.requestTimeoutSec, 20, 600, DEFAULT_SETTINGS.requestTimeoutSec);
     return s;
@@ -309,7 +321,7 @@
 
   function getResponseLanguage(settings) {
     const s = mergeSettings(settings);
-    return s.responseLanguage === "interface" ? s.language : s.responseLanguage;
+    return s.responseLanguage === "auto" ? s.language : s.responseLanguage;
   }
 
   function localizeDocument(doc, language) {
@@ -393,15 +405,16 @@
   // Сборка messages: system (+ контекст страницы) + история + новый вопрос
   function buildMessages(opts) {
     const settings = mergeSettings(opts.settings);
-    const responseLanguage = getResponseLanguage(settings);
-    const languageInstruction = responseLanguage === "en"
-      ? "RESPONSE LANGUAGE: Write every answer in English, regardless of the language used in the question, page, or custom instructions."
+    const languageInstruction = settings.responseLanguage === "auto"
+      ? "RESPONSE LANGUAGE: Automatically detect the language of the user's latest message and always respond strictly in that language."
+      : settings.responseLanguage === "en"
+      ? "RESPONSE LANGUAGE: Always respond strictly in English, regardless of the language used in the question, page, or custom instructions."
       : "ЯЗЫК ОТВЕТА: Всегда отвечай на русском языке, независимо от языка вопроса, страницы или пользовательских инструкций.";
     const history = (opts.history || []).filter(
       (m) => m && (m.role === "user" || m.role === "assistant") && !m.error && String(m.content || "").trim()
     );
     const tail = history.slice(-settings.historyLimit);
-    const sys = [settings.systemPrompt, languageInstruction, pageContextBlock(opts.pageContext, settings.maxContextChars), opts.webContext]
+    const sys = [languageInstruction, settings.systemPrompt, pageContextBlock(opts.pageContext, settings.maxContextChars), opts.webContext]
       .filter(Boolean)
       .join("\n\n");
     const messages = [];

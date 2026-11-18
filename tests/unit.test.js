@@ -139,10 +139,10 @@ function streamResponse(chunks, headers) {
     assert.ok(questions.some((question) => question.includes("снежные логова")));
   });
 
-  test("theme setting defaults to light and rejects unknown values", () => {
-    assert.strictEqual(L.mergeSettings({}).theme, "light");
+  test("theme setting defaults to dark and rejects unknown values", () => {
+    assert.strictEqual(L.mergeSettings({}).theme, "dark");
     assert.strictEqual(L.mergeSettings({ theme: "dark" }).theme, "dark");
-    assert.strictEqual(L.mergeSettings({ theme: "system" }).theme, "light");
+    assert.strictEqual(L.mergeSettings({ theme: "system" }).theme, "dark");
   });
 
   test("language setting defaults to Russian and translates interface labels", () => {
@@ -152,6 +152,8 @@ function streamResponse(chunks, headers) {
     assert.strictEqual(L.getResponseLanguage({ language: "en" }), "en");
     assert.strictEqual(L.getResponseLanguage({ language: "en", responseLanguage: "ru" }), "ru");
     assert.strictEqual(L.getResponseLanguage({ language: "ru", responseLanguage: "en" }), "en");
+    assert.strictEqual(L.mergeSettings({ responseLanguage: "interface" }).responseLanguage, "auto");
+    assert.strictEqual(L.getResponseLanguage({ language: "en", responseLanguage: "auto" }), "en");
     assert.strictEqual(L.translate("input.placeholder", "en"), "Ask something...");
     assert.strictEqual(L.translate("provider.local", "ru"), "LOCAL");
   });
@@ -210,7 +212,14 @@ function streamResponse(chunks, headers) {
       settings: { language: "ru", responseLanguage: "en", systemPrompt: "Keep it brief." },
       userText: "Объясни это"
     });
-    assert.ok(englishMessages[0].content.includes("Write every answer in English"));
+    assert.ok(englishMessages[0].content.includes("Always respond strictly in English"));
+    assert.ok(englishMessages[0].content.startsWith("RESPONSE LANGUAGE:"));
+    const automaticMessages = L.buildMessages({
+      settings: { language: "ru", responseLanguage: "auto", systemPrompt: "Keep it brief." },
+      userText: "Hello"
+    });
+    assert.ok(automaticMessages[0].content.startsWith("RESPONSE LANGUAGE: Automatically detect"));
+    assert.ok(automaticMessages[0].content.includes("\n\nKeep it brief."));
     const englishQuestions = L.buildQuestionsMessages(null, { language: "ru", responseLanguage: "en" });
     assert.ok(englishQuestions[0].content.includes("in English"));
     assert.ok(englishQuestions[1].content.includes("valid JSON array"));
